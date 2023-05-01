@@ -1,11 +1,9 @@
 Burn Captions
 =============
 
-Burn a given SRT file into a video.
+This program is loosely based on [mitmul's Burn Captions](https://github.com/mitmul/burn-captions) repository which "[burns] a given SRT file into a video." This version uses moviepy instead of the ffmpeg writer. It still uses imageio to read in the frames of the movie. It adds captions from the SRT file and writes out the frames (sans audio) to a new mp4 file.
 
 ## Requirements
-
-- Python 3.7+
 
 Please install required packages by the following command:
 
