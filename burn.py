@@ -14,6 +14,10 @@ from PIL import ImageFont
 from pycaption import SRTReader
 from tqdm import tqdm
 
+import os
+import moviepy.video.io.ImageSequenceClip
+image_files = []
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--video", type=str, required=True)
@@ -63,18 +67,7 @@ if __name__ == "__main__":
         output_params = shlex.split(args.output_params)
     else:
         output_params = []
-
-    print("save to:", args.out)
-    writer = imageio.get_writer(
-        args.out,
-        codec=meta_data["codec"],
-        fps=fps,
-        pixelformat=args.pixelformat,
-        macro_block_size=20,
-        quality=args.quality,
-        bitrate=args.bitrate,
-        output_params=output_params,
-    )
+    
 
     caption_data = []
     for caption in captions:
@@ -104,8 +97,16 @@ if __name__ == "__main__":
 
     caption_i = 0
     pbar = tqdm(total=reader.count_frames())
-
+    
     for frame_i, frame in enumerate(reader):
+        if frame_i == 0:
+            hgt = len(frame)
+            wd = len(frame[0])
+            newframe = np.ones((hgt + (16 - hgt % 16), wd + (16 - wd % 16), 3), dtype=np.uint8)
+            newframe = newframe * np.array([[0, 0, 0]], dtype=np.uint8)
+        newframe[0:hgt, 0:wd] = frame
+        frame = np.copy(newframe)
+        
         if args.blueback:
             frame = np.ones((1080, 1920, 3), dtype=np.uint8)
             frame = frame * np.array([[[0, 0, 255]]], dtype=np.uint8)
@@ -115,61 +116,82 @@ if __name__ == "__main__":
         if caption["start_frame_num"] <= frame_i <= caption["end_frame_num"]:
             image = Image.fromarray(frame)
             draw = ImageDraw.Draw(image)
-            if args.secondary_font_start <= caption_i <= args.secondary_font_end:
-                if caption["italic"]:
-                    font_i = args.secondary_font_italic_index
-                else:
-                    font_i = args.secondary_font_index
 
-                draw.font = ImageFont.truetype(
-                    args.font,
-                    args.secondary_font_size,
-                    font_i,
-                    layout_engine=ImageFont.LAYOUT_BASIC,
-                )
-            else:
-                if caption["italic"]:
-                    font_i = args.font_italic_index
-                else:
-                    font_i = args.font_index
 
-                draw.font = ImageFont.truetype(
-                    args.font,
-                    args.font_size,
-                    font_i,
-                    layout_engine=ImageFont.LAYOUT_BASIC,
-                )
+            
+            # draw.font = ImageFont.load_default()
+                # workaround (and potential full solution):
+                # https://stackoverflow.com/questions/47694421/pil-issue-oserror-cannot-open-resource
+                # original code in docstring below:
+            
+            draw.font = ImageFont.truetype(
+                "arial.ttf", 48,) 
+            """
+                args.font_size,
+                font_i,
+                layout_engine=ImageFont.LAYOUT_BASIC,
+            )"""
 
             h, w, _ = frame.shape
-            wt, ht = draw.font.getsize_multiline(caption["text"])
+            
+            
+            # work around, just testing ... 
+            wt = w*.7
+            ht = h*0.05
+            pos = [
+                int(w / 2 - wt / 2),  # center
+                h - ht - args.bottom_space  # bottom
+            ]
+            
+            # wt, ht = draw.font.getsize_multiline(caption["text"])
+            bbox = draw.textbbox(xy = pos, text = caption["text"], anchor='ms', spacing=4, align='center') #, direction=None, features=None, language=None, stroke_width=0, embedded_color=False)
 
+            wt = bbox[2] - bbox[0]
+            ht = bbox[3] - bbox[1]
             # fmt: off
             pos = [
                 int(w / 2 - wt / 2),  # center
                 h - ht - args.bottom_space  # bottom
             ]
+            newpos = [pos[0], pos[1], pos[0] + wt, pos[1] + ht]
+            
+            draw.rectangle(newpos, (9,9,9), (9,9,9))
+            
             # fmt: on
             color = (255, 255, 255)
-            draw.text(
+            # work around based on the PIL documentation
+            # multiline_textbbox
+            draw.text(xy = pos, text = caption["text"], spacing=4, align='left') #, direction=None, features=None, language=None, stroke_width=0, embedded_color=False)
+            # https://pillow.readthedocs.io/en/stable/reference/ImageDraw.html#PIL.ImageDraw.ImageDraw.multiline_textbbox
+            
+            ## ImageDraw.ImageDraw.multiline_textbbox(caption["text"])
+            
+            """draw.text(
                 pos,
                 caption["text"],
                 color,
                 align="center",
                 stroke_width=2,
                 stroke_fill=(0, 0, 0),
-            )
-            writer.append_data(np.array(image))
+            )"""
+
+            image_files.append(np.array(image))
         elif frame_i > caption["end_frame_num"]:
             caption_i += 1
-            writer.append_data(frame)
+            image_files.append(frame)
         else:
-            writer.append_data(frame)
+            image_files.append(frame)
+            print("Just appended plain frame " + str(frame_i))
+            print("my sched: " + str(caption["start_frame_num"])  + " and now " + str(caption["end_frame_num"]))
         pbar.update(1)
 
-        if args.break_after > 0 and (frame_i / fps) > args.break_after:
-            break
+        #if args.break_after > 0 and (frame_i / fps) > args.break_after:
+        #    break
 
-        frame_i += 1
+        # frame_i += 1
 
     reader.close()
-    writer.close()
+
+
+    clip = moviepy.video.io.ImageSequenceClip.ImageSequenceClip(image_files, fps=fps)
+    clip.write_videofile(args.out)
