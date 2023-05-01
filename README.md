@@ -10,8 +10,9 @@ Burn a given SRT file into a video.
 Please install required packages by the following command:
 
 ```bash
-pip install -r requirements.txt
-```
+conda install -c conda-forge moviepy
+pip install pycaption
+ ```
 
 ## Usage
 
